@@ -1,0 +1,165 @@
+#version lil show : meeting le 15/07
+#main_window:
+# src/services/main_window.py
+import os
+import sys
+
+from PyQt5 import QtWidgets
+from PyQt5.QtWidgets import QFileDialog, QMessageBox
+
+from repositery.script import generate_xml
+from ui.untitled import Ui_Dialog
+
+
+class MainWindow(QtWidgets.QDialog):
+    def __init__(self):
+        super().__init__()
+        self.ui=Ui_Dialog()
+        self.ui.setupUi(self)
+        # Connexion des boutons avec les noms de fichier .ui
+        self.ui.btnXml.clicked.connect(self.importer_xml)
+        self.ui.btnExcel.clicked.connect(self.importer_excel)
+        self.ui.btnGenerate.clicked.connect(self.generer_xml)
+
+        # Labels
+        self.ui.labelXml = self.findChild(QtWidgets.QLabel, "labelXml")
+        self.ui.labelExcel = self.findChild(QtWidgets.QLabel, "labelXml_2")
+        self.ui.labelStatus = self.findChild(QtWidgets.QLabel, "labelStatus")
+
+        # Chemins de fichiers
+        #self.xml_path = None
+        #self.excel_path = None
+
+
+    def importer_xml(self):
+        fichier = QFileDialog.getOpenFileName(self, "Sélectionner un fichier XML", "", "Fichiers XML (*.xml)")
+        if fichier != "":
+            generate_xml()
+            self.xml_path = fichier
+            nom = os.path.basename(fichier)
+            texte = "xml importé : " + nom
+            self.labelXml .setText(texte)
+
+        else:
+            self.labelXml.setText("xml importé : Aucun fichier sélectionné")
+
+    def importer_excel(self):
+        fichier = QFileDialog.getOpenFileName(self, "Sélectionner un fichier Excel", "", "Fichiers Excel (*.xlsx *.xls)")
+        if fichier != "":
+            generate_xml()
+            self.excel_path = fichier
+            nom = os.path.basename(fichier)
+            texte = "excel importé : " + nom
+            self.labelExcel.setText(texte)
+        else:
+            self.labelExcel.setText("excel importé : Aucun fichier sélectionné")
+
+    def generer_xml(self):
+        if  self.xml_path ==" " or  self.excel_path ==" ":
+            QMessageBox.warning(self, "Attention", "Veuillez importer les fichiers XML et Excel avant de générer.")
+            return
+
+        self.labelStatus.setText("Génération en cours...")
+
+
+#main
+import sys
+
+from PyQt5 import QtWidgets
+
+from src.services.main_window import MainWindow
+from ui.untitled1 import Ui_Dialog
+
+if __name__ == '__main__':
+    app = QtWidgets.QApplication(sys.argv)
+    ui = MainWindow()
+    ui.show()
+    sys.exit(app.exec_())
+    #script 
+    def generate_xml():
+    try:
+        print("hello")
+    except Exception:
+        raise
+#apres le travail du path des fichiers 
+# src/services/main_window.py
+# src/services/main_window.py
+import os
+import sys
+
+from PyQt5 import QtWidgets
+from PyQt5.QtWidgets import QFileDialog, QMessageBox
+
+from repositery.script import generate_xml
+from ui.generateur import Ui_Dialog
+
+
+class MainWindow(QtWidgets.QDialog):
+    def __init__(self):
+        super().__init__()
+        self.ui=Ui_Dialog()
+        self.ui.setupUi(self)
+        self.ui.btnXml.clicked.connect(self.importer_xml)
+        self.ui.btnExcel.clicked.connect(self.importer_excel)
+        self.ui.btnGenerate.clicked.connect(self.generer_xml)
+
+        self.ui.lineEdit = self.findChild(QtWidgets.QLineEdit, "lineEdit")
+        self.ui.lineEdit_2 = self.findChild(QtWidgets.QLineEdit, "lineEdit_2")
+
+        self.ui.xml_path = None
+        self.ui.excel_path = None
+
+    def importer_xml(self):
+        resultat = QFileDialog.getOpenFileName(self, "Sélectionner un fichier XML", "", "Fichiers XML (*.xml)")
+        fichier = resultat[0]
+        if fichier != "":
+            self.ui.xml_path = fichier
+            texte = "xml importé : " + fichier
+            self.ui.lineEdit.setText(texte)
+        else:
+            self.ui.lineEdit.setText("xml importé : Aucun fichier sélectionné")
+#j ai pas utilisé try et except parcequ il s execute et donne les path des fichiers
+    def importer_excel(self):
+        resultat = QFileDialog.getOpenFileName(self, "Sélectionner un fichier Excel", "",
+                                       "Fichiers Excel (*.xlsx *.xls)")
+        fichier = resultat[0]
+        if fichier :
+            generate_xml()
+            self.ui.excel_path = fichier
+            texte = "excel importé : " + fichier
+            self.ui.lineEdit_2 .setText(texte)
+        else:
+            self.ui.lineEdit_2 .setText("excel importé : Aucun fichier sélectionné")
+
+    def generer_xml(self):
+        if  self.xml_path ==" " or  self.excel_path ==" ":
+            QMessageBox.warning(self, "Attention", "Veuillez importer les fichiers XML et Excel avant de générer.")
+            return
+
+        self.labelStatus.setText("Génération en cours...")
+
+
+#meeting le 17/07:
+import pandas as pd
+
+
+def generate_xml(excel_path):
+    try:
+
+
+        df = pd.read_excel(excel_path, sheet_name="Testevaluation",header=7)
+        df.columns = df.columns.str.strip()
+        start = "ALU_L_Diag_01_XIX_HCP4_CANFD05"
+        end = "Defect Discussion"
+
+        if start not in df.columns or end not in df.columns:
+            print("Colonnes introuvables dans le fichier Excel.")
+        for i in range(len(df)):
+            r = df.iloc[i]
+            idx_debut = df.columns.get_loc(start)
+            idx_fin = df.columns.get_loc(end)
+            df2 = r.iloc[idx_debut:idx_fin + 1]
+        print(df2)
+
+    except Exception as e:
+        print("Une erreur est survenue :", e)
