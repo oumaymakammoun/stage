@@ -1,0 +1,54 @@
+from lxml import etree
+import pandas as pd
+def generate_xml(excel_path):
+    try:
+        df = pd.read_excel(excel_path, sheet_name="Testevaluation",header=7)
+        spdo_cols = []
+        for col in df.columns:
+            if 'HCP4_CANFD05' in col:
+                spdo_cols.append(col)
+        results = []
+        df.columns = df.columns.str.strip()
+        start = "ALU_L_Diag_01_XIX_HCP4_CANFD05"
+        end = "Defect Discussion"
+        if start not in df.columns or end not in df.columns:
+            print("Colonnes introuvables dans le fichier Excel.")
+        for i in range(len(df)):
+            r = df.iloc[i]
+            for spdo in spdo_cols:
+                result = str(r[spdo]).strip()
+
+                if result not in ['nan']:
+                    results.append([
+                        r['Testpoint ID'],
+                        spdo,result
+                    ])
+
+
+        df2 = pd.DataFrame(results, columns=['Testpoint ID', 'SPDO', 'Result'])
+        return df2
+        print( df2)
+    except Exception as e:
+        print("Une erreur est survenue :", e)
+def verifier(xml_path, df2):
+        try:
+            tree = etree.parse(xml_path)
+            root = tree.getroot()
+
+            # Parcours pour trouver la balise TITEL
+            titel_elements = root.xpath('//TITEL')  # Ajuste le chemin selon la structure réelle de ton XML
+
+            for titel in titel_elements:
+                titel_text = titel.text.strip()
+
+                # Vérifier si le texte existe dans la colonne 'Testpoint ID'
+                if titel_text in df2['Testpoint ID'].values:
+                    print(titel_text," est présent dans le DataFrame.")
+                else:
+                    print(titel_text," est absent du DataFrame.")
+
+        except Exception as e:
+            print("Une erreur est survenue lors de la lecture XML :", e)
+
+
+
