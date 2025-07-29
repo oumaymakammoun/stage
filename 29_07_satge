@@ -1,0 +1,125 @@
+from lxml import etree
+import pandas as pd
+
+def generate_xml(excel_path, pdu_colum, pdu_number):
+    try:
+        df = pd.read_excel(excel_path, sheet_name="Testevaluation",header=7)
+        df.columns = df.columns.str.strip()
+
+        if pdu_colum not in df.columns:
+            print(f"Colonne de début '{pdu_colum}' introuvable dans le fichier Excel.")
+        results = []
+
+        start_idx = df.columns.get_loc(pdu_colum)
+        end_idx = pdu_number  # car c'est un index
+        spdu_cols = df.columns[start_idx:end_idx + 1]
+
+        for i in range(len(df)):
+            r = df.iloc[i]
+            testcase = r['Testpoint ID']
+            if testcase and 'nan' not in str(testcase).lower():
+
+                for spdu in spdu_cols:
+
+                    result = str(r[spdu]).strip().lower()
+                    if result and 'not applicable' not in result and 'nan' not in result.lower():
+                        results.append([r['Testpoint ID'], spdu, result, r['Defect Discussion Result']])
+
+        df2 = pd.DataFrame(results, columns=['Testpoint ID', 'SPDU', 'Result', 'Defect Discussion Result'])
+        print(df2)
+        return df2
+    except Exception as  e:
+        print("Une erreur est survenue :", e)
+
+
+from lxml import etree
+
+def verifier(xml_path, df2):
+    try:
+        tree = etree.parse(xml_path)
+        root = tree.getroot()
+
+        titel_elements = root.xpath('//TITEL')
+
+        for titel in titel_elements:
+            testpoint_id = titel.text.strip()
+            print("\n TITEL :", testpoint_id)
+
+            if testpoint_id not in df2['Testpoint ID'].values:
+                print("  Absent dans DataFrame.")
+                continue
+            print("  Présent dans DataFrame.")
+
+            dokumentation = titel
+            while dokumentation is not None and dokumentation.tag != 'DOKUMENTATION':
+                dokumentation = dokumentation.getparent()
+
+            if dokumentation is None:
+                print("  Aucun bloc <DOKUMENTATION> trouvé.")
+                continue
+
+            current = dokumentation.getnext()
+            while current is not None and current.tag != 'DOKUMENTATION':
+                if current.tag == 'PRM':
+                    prm_id = current.get('ID', '').strip()
+
+                    if 'ALU_L_Diag_' in prm_id and '_XIX_HCP4_CANFD05' in prm_id:
+                        match = True
+                    else:
+                        match = False
+
+                    if not match:
+                        current = current.getnext()
+                        continue
+
+                    start = prm_id.find('ALU_L_Diag_')
+                    end = prm_id.find('_XIX_HCP4_CANFD05') + len('_XIX_HCP4_CANFD05')
+                    spdu = prm_id[start:end]
+
+                    print("SPDU trouvé :", spdu)
+
+                    ligne = df2.loc[(df2['Testpoint ID'] == testpoint_id) & (df2['SPDO'] == spdu)
+                    ]
+
+                    if ligne.empty:
+                        print("  Aucune ligne correspondante.")
+                    else:
+                        result_raw = ligne['Result'].values[0]
+                        result = str(result_raw).strip().lower()
+                        print(" Résultat :", result)
+                        if result == "passed":
+                            sollwerte = current.find('./SOLLWERTE')
+                            if sollwerte is not None:
+                                testzustand = current.find('./TESTZUSTAND')
+                                if testzustand is not None:
+                                    for sollwert in sollwerte.findall('./SOLLWERT'):
+                                        bewertung_ref = sollwert.find('./BEWERTUNGSKLASSE_REF')
+                                        if bewertung_ref is not None:
+                                            id_ref = bewertung_ref.get('ID_REF', '').strip()
+                                            if id_ref:
+                                                bemerkung = etree.Element('BEMERKUNG')
+                                                bemerkung.text = "ID_REF: " + id_ref
+                                                testzustand.append(bemerkung)
+                                                print(" BEMERKUNG ajoutée avec ID_REF :", id_ref)
+
+
+                        elif result == "not applicable":
+                            print("ℹ️ Résultat 'not applicable' ignoré.")
+                        else:
+
+                            testzustand = current.find('./TESTZUSTAND')
+                            if testzustand is not None:
+                                bemerkung = etree.Element('BEMERKUNG')
+                                bemerkung.text = f" Résultat inattendu : {result_raw}"
+                                testzustand.append(bemerkung)
+                                print(" BEMERKUNG ajoutée :", bemerkung.text)
+                            else:
+                                print(" Balise <TESTZUSTAND> absente.")
+                current = current.getnext()
+
+        tree.write("output_m.xml", encoding="utf-8", xml_declaration=True, pretty_print=True)
+        print(" Fichier sauvegardé : output_m.xml")
+
+    except Exception as e:
+        print(" Erreur :", e)
+
