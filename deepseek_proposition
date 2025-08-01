@@ -1,0 +1,80 @@
+from lxml import etree
+import pandas as pd
+
+def copy_node_content(node):
+    """Copie le contenu d'un nœud (enfants seulement)"""
+    new_nodes = []
+    for child in node:
+        new_node = etree.Element(child.tag)
+        new_node.text = child.text
+        new_node.tail = child.tail
+        for k, v in child.items():
+            new_node.set(k, v)
+        new_nodes.append(new_node)
+    return new_nodes
+
+def verifier(xml_path, df):
+    try:
+        # 1. Chargement des fichiers
+        parser = etree.XMLParser(remove_blank_text=True)
+        tree = etree.parse(xml_path, parser)
+        root = tree.getroot()
+
+        # 2. Parcours des TITEL
+        for titel in root.xpath('//TITEL'):
+            testpoint_id = titel.text.strip() if titel.text else ""
+            if not testpoint_id:
+                continue
+
+            # 3. Vérification dans le DataFrame
+            df_filtered = df[df['Testpoint ID'] == testpoint_id]
+            if df_filtered.empty:
+                continue
+
+            # 4. Trouver la documentation parente
+            dokumentation = titel.getparent()
+            while dokumentation is not None and dokumentation.tag != 'DOKUMENTATION':
+                dokumentation = dokumentation.getparent()
+
+            if dokumentation is None:
+                continue
+
+            # 5. Parcourir les PRM suivants
+            next_elem = dokumentation.getnext()
+            while next_elem is not None and next_elem.tag != 'DOKUMENTATION':
+                if next_elem.tag == 'PRM':
+                    prm = next_elem
+                    prm_id = prm.get('ID', '').strip()
+
+                    # 6. Vérifier chaque SPDU du DataFrame
+                    for _, row in df_filtered.iterrows():
+                        spdu = row['SPDU']
+                        if spdu in prm_id and str(row['Result']).strip().lower() == 'passed':
+                            
+                            # 7. Recherche des BEWERTUNGSKLASSE_REF contenant "io"
+                            for bewertung_ref in prm.xpath('.//BEWERTUNGSKLASSE_REF[contains(translate(@ID_REF, "IO", "io"), "io")]'):
+                                sollwert = bewertung_ref.getparent()  # SOLLWERT parent
+                                
+                                # 8. Création de BEWERTUNG avec l'ID du SOLLWERT
+                                bewertung = etree.Element('BEWERTUNG')
+                                bewertung.set('sollwerte_ref', sollwert.get('ID', ''))
+                                
+                                # 9. Copie du CONTENU du SOLLWERT (sans la balise)
+                                for child_node in copy_node_content(sollwert):
+                                    bewertung.append(child_node)
+                                
+                                # 10. Ajout sous TESTZUSTAND
+                                testzustand = prm.find('.//TESTZUSTAND')
+                                if testzustand is None:
+                                    testzustand = etree.SubElement(prm, 'TESTZUSTAND')
+                                testzustand.append(bewertung)
+
+                next_elem = next_elem.getnext()
+
+        # 11. Sauvegarde
+        tree.write("output.xml", encoding='utf-8', xml_declaration=True, pretty_print=True)
+        print("Traitement réussi - Fichier output.xml généré")
+
+    except Exception as e:
+        print(f"Erreur: {e}")
+        raise
