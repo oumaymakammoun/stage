@@ -1,0 +1,118 @@
+from lxml import etree
+import pandas as pd
+
+def generate_xml(excel_path, pdu_colum, pdu_number):
+    try:
+        df = pd.read_excel(excel_path, sheet_name="Testevaluation",header=7)
+        df.columns = df.columns.str.strip()
+
+        if pdu_colum not in df.columns:
+            print(f"Colonne de début '{pdu_colum}' introuvable dans le fichier Excel.")
+        results = []
+
+        start_idx = df.columns.get_loc(pdu_colum)
+        end_idx = pdu_number  # car c'est un index
+        spdu_cols = df.columns[start_idx:end_idx + 1]
+
+        for i in range(len(df)):
+            r = df.iloc[i]
+            testcase = r['Testpoint ID']
+            if testcase and 'nan' not in str(testcase).lower():
+
+                for spdu in spdu_cols:
+
+                    result = str(r[spdu]).strip().lower()
+                    if result and 'not applicable' not in result and 'nan' not in result.lower():
+                        results.append([r['Testpoint ID'], spdu, result, r['Defect Discussion Result']])
+
+        df2 = pd.DataFrame(results, columns=['Testpoint ID', 'SPDU', 'Result', 'Defect Discussion Result'])
+        print(df2)
+        return df2
+    except Exception as  e:
+        print("Une erreur est survenue :", e)
+
+from lxml import etree
+import pandas as pd
+
+
+
+def verifier(xml_path, df2):
+    try:
+
+        tree = etree.parse(xml_path)
+        root = tree.getroot()
+
+        titel_elements = root.xpath('//TITEL')
+
+        for titel in titel_elements :
+            testpoint_id = titel.text.strip()
+            if not testpoint_id:
+                continue
+            ligne_df = df2[df2['Testpoint ID'] == testpoint_id]
+            if ligne_df.empty:
+                continue
+
+            doc = titel
+            while doc is not None and doc.tag != 'DOKUMENTATION':
+                doc = doc.getparent()
+
+            if doc is None:
+                continue
+            prm_list = []
+            current = doc.getnext()
+            while current is not None and current.tag != 'DOKUMENTATION':
+                if current.tag == 'PRM':
+                    prm_list.append(current)
+                current = current.getnext()
+
+            for _, ligne in ligne_df.iterrows():
+                spdu = str(ligne['SPDU']).strip()
+                result = str(ligne['Result']).strip().lower()
+                defect_result = str(ligne['Defect Discussion Result']).strip().lower()
+
+                for prm in prm_list:
+                    if spdu not in prm.get("ID", ""):
+                        continue
+
+
+                    for sollwert in prm.xpath('.//SOLLWERT'):           #dans Dans chaque PRM je cherche balise SOLLWERT
+                        bewertung_refs = sollwert.xpath('.//BEWERTUNGSKLASSE_REF')
+                        for bewertung_ref in bewertung_refs:
+                            id_ref = bewertung_ref.get('ID_REF', '').lower()
+
+
+                        if result == 'passed':
+                            if 'io' not in id_ref:
+                                continue
+
+                        elif result.startswith('failed'):
+                            if  'io'  in id_ref:
+                                continue
+
+                            if not any(pattern in result.lower()
+                                    for pattern in [ 'bsz dtc 0x95501','crc dtc 0x95501','timeout dtc 0x95501']):
+                                continue
+                        else:
+                            continue
+
+                        bewertung = etree.Element('BEWERTUNG') #j ai cree la balise
+                        bewertung.set('sollwerte_idref', sollwert.get('ID', ''))
+
+                        testzustand = prm.find('TESTZUSTAND')
+                        if testzustand is None:
+                            testzustand = etree.SubElement(prm, 'TESTZUSTAND')
+
+                        testzustand.append(bewertung)
+
+                        print(f" BEWERTUNG ajoutée - Testpoint: {testpoint_id}, "
+                              f"SPDU: {spdu}, Result: {result}, "
+                              f"Defect: {defect_result}")
+
+        output_path = "output_verified.xml"
+        tree.write(output_path,encoding='utf-8',pretty_print=True,xml_declaration=True)
+
+        print(f" Fichier XML généré : {output_path}")
+        return True
+
+    except Exception as e:
+        print(f" Erreur lors de la vérification : {str(e)}")
