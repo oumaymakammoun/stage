@@ -1,0 +1,80 @@
+def verifier(xml_path, df2):
+    try:
+
+        tree = etree.parse(xml_path)
+        root = tree.getroot()
+
+        titel_elements = root.xpath('//TITEL')
+
+        for titel in titel_elements :
+            testpoint_id = titel.text.strip()
+            if not testpoint_id:
+                continue
+            ligne_df = df2[df2['Testpoint ID'] == testpoint_id]
+            if ligne_df.empty:
+                continue
+
+            doc = titel
+            while doc is not None and doc.tag != 'DOKUMENTATION':
+                doc = doc.getparent()
+
+            if doc is None:
+                continue
+            prm_list = []
+            current = doc.getnext()
+            while current is not None and current.tag != 'DOKUMENTATION':
+                if current.tag == 'PRM':
+                    prm_list.append(current)
+                current = current.getnext()
+
+            for _, ligne in ligne_df.iterrows():
+                spdu = str(ligne['SPDU']).strip()
+                result = str(ligne['Result']).strip().lower()
+                defect_result = str(ligne['Defect Discussion Result']).strip().lower()
+
+                for prm in prm_list:
+                    if spdu not in prm.get("ID", ""):
+                        continue
+
+                    dict_sollwert = {}
+                    for sollwert in prm.xpath('.//SOLLWERT'):
+                        sollwert_id = sollwert.get('ID', '').strip()
+                        for bewertung_ref in sollwert.xpath('.//BEWERTUNGSKLASSE_REF'):
+                            ref_id = bewertung_ref.get('ID_REF', '').lower().strip()
+                            if ref_id:  # only add if not empty
+                                dict_sollwert[ref_id] = sollwert_id
+
+                    # Check conditions for adding BEWERTUNG
+                    if not(result == 'passed'and 'io' in dict_sollwert.keys()):
+
+
+
+                    elif result.startswith('failed'):
+
+                        if not any(pattern in result.lower()
+                                   for pattern in ['bsz dtc 0x95501', 'crc dtc 0x95501', 'timeout dtc 0x95501']):
+                            continue
+                    else:
+                        continue
+
+                    bewertung = etree.Element('BEWERTUNG')  # j ai cree la balise
+                    bewertung.set('sollwerte_idref', sollwert.get('ID', ''))
+
+                    testzustand = prm.find('TESTZUSTAND')
+                    if testzustand is None:
+                        testzustand = etree.SubElement(prm, 'TESTZUSTAND')
+
+                    testzustand.append(bewertung)
+
+                    print(f" BEWERTUNG ajoutée - Testpoint: {testpoint_id}, "
+                          f"SPDU: {spdu}, Result: {result}, "
+                          f"Defect: {defect_result}")
+
+        output_path = "output_verified.xml"
+        tree.write(output_path,encoding='utf-8',pretty_print=True,xml_declaration=True)
+
+        print(f" Fichier XML généré : {output_path}")
+        return True
+
+    except Exception as e:
+        print(f" Erreur lors de la vérification : {str(e)}")
